@@ -81,7 +81,7 @@ Partial Class g1
 		'	next
 			
         
-        q= "select d.dcounter  as P_DATE " + plist + ", '" + sinfo +  "' as S_INFO from datacurr d   where d.id_bd=" +D.Tostring()+ "  and d.dcounter >=" + sF +" and d.dcounter <=" + sT +" and d.id_ptype=3"
+        q = "select to_char(d.dcounter,'YYYY-MM-DD HH24')  as P_DATE " + plist + ", '" + sinfo + "' as S_INFO from datacurr d   where d.id_bd=" + D.Tostring() + "  and d.dcounter >=" + sF + " and d.dcounter <=" + sT + " and d.id_ptype=3"
 		
 		
         dt = cm.QuerySelect(q)

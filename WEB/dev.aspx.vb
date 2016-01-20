@@ -25,7 +25,7 @@ Partial Class dev
 
         Dim U As String
         U = Request.QueryString("U") & ""
-        dt = cm.QuerySelect("select CSHORT NAME,ID_BD,b.ID_GRP,CDEVDESC from  bbuildings b join bdevices d on b.id_bu= d.id_bu join devices s on s.id_dev=d.id_dev join usergroup g on b.id_grp=  g.id_grp and g.usersid=" & U & " where d.npquery=1  order by NAME")
+        dt = cm.QuerySelect("select CSHORT || ' (' || CADDRESS || ')'  NAME,ID_BD,b.ID_GRP,CDEVDESC from  bbuildings b join bdevices d on b.id_bu= d.id_bu join devices s on s.id_dev=d.id_dev join usergroup g on b.id_grp=  g.id_grp and g.usersid=" & U & " where d.npquery=1  order by NAME")
       
 
       

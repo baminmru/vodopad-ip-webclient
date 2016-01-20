@@ -9,7 +9,7 @@ Ext.define('list_model', {
 Ext.define('dev_model', {
     extend: 'Ext.data.Model',
     fields: [
-	{ name: 'NODENAME', type: 'string' },
+	{ name: 'NAME', type: 'string' },
 	{ name: 'ID_BD', type: 'string' },
     { name: 'ID_GRP', type: 'string' },
     { name: 'CDEVDESC', type: 'string' }
@@ -840,6 +840,10 @@ function GetG1Filter(){
 
 function GetG1Panel(){
 	
+	var markerFx = {
+            duration: 200,
+            easing: 'backOut'
+        };
 	gPanel =Ext.create('Ext.Panel',	
 	       { xtype: 'panel',
 			itemId: 'p_graph',
@@ -848,20 +852,19 @@ function GetG1Panel(){
             xtype: 'cartesian',
             width: '100%',
             height: 500,
-            /*legend: {
-                docked: 'top'
-            },
-			*/
+          
             store: store_graph,
-            insetPadding: 40,
-            //interactions: 'itemhighlight',
+            insetPadding: 10,
+            // legend: {
+            //    docked: 'right'
+            //},
             
             axes: [{
                 type: 'numeric',
                 fields: ['S0', 'S1', 'S2', 'S3','S4', 'S5', 'S6', 'S7','S8', 'S9' ],
                 position: 'left',
                 grid: true,
-                minimum: -1
+                minimum: 0
                 
             }, {
                 type: 'category',
@@ -881,20 +884,18 @@ function GetG1Panel(){
             series: [{
                 type: 'line',
                 axis: 'left',
-                title: 'S0',
+                title: 'График 0',
                 xField: 'P_DATE',
                 yField: 'S0',
                 style: {
                     lineWidth: 4
                 },
                 marker: {
-                    radius: 4
+                    type: 'square',
+                    fx: markerFx
                 },
                 highlight: {
-                    fillStyle: '#000',
-                    radius: 5,
-                    lineWidth: 2,
-                    strokeStyle: '#fff'
+                  scaling: 2
                 },
 				 renderer: function(sprite, record, attr, index, store){
 					 
@@ -940,20 +941,18 @@ function GetG1Panel(){
             }, {
                 type: 'line',
                 axis: 'left',
-                title: 'S1',
+                title: 'График 1',
                 xField: 'P_DATE',
                 yField: 'S1',
                 style: {
                     lineWidth: 4
                 },
-                marker: {
-                    radius: 4
+                 marker: {
+                    type: 'triangle',
+                    fx: markerFx
                 },
                 highlight: {
-                    fillStyle: '#000',
-                    radius: 5,
-                    lineWidth: 2,
-                    strokeStyle: '#fff'
+                   scaling: 2
                 },
 				renderer: function(sprite, record, attr, index, store){
 					 
@@ -996,20 +995,18 @@ function GetG1Panel(){
             }, {
                 type: 'line',
                 axis: 'left',
-                title: 'S2',
+                title: 'График 2',
                 xField: 'P_DATE',
                 yField: 'S2',
                 style: {
                     lineWidth: 4
                 },
-                marker: {
-                    radius: 4
+               marker: {
+                    type: 'arrow',
+                    fx: markerFx
                 },
                 highlight: {
-                    fillStyle: '#000',
-                    radius: 5,
-                    lineWidth: 2,
-                    strokeStyle: '#fff'
+                   scaling: 2
                 },
 				renderer: function(sprite, record, attr, index, store){
 					 
@@ -1052,20 +1049,18 @@ function GetG1Panel(){
             }, {
 					type: 'line',
 					axis: 'left',
-					title: 'S3',
+					title: 'График 3',
 					xField: 'P_DATE',
 					yField: 'S3',
 					style: {
 						lineWidth: 4
 					},
-					marker: {
-						radius: 4
+					 marker: {
+						type: 'cross',
+						fx: markerFx
 					},
 					highlight: {
-						fillStyle: '#000',
-						radius: 5,
-						lineWidth: 2,
-						strokeStyle: '#fff'
+						scaling: 2
 						 
 					}
 					
@@ -1112,20 +1107,18 @@ function GetG1Panel(){
 		   , {
 					type: 'line',
 					axis: 'left',
-					title: 'S4',
+					title: 'График 4',
 					xField: 'P_DATE',
 					yField: 'S4',
 					style: {
 						lineWidth: 4
 					},
 					marker: {
-						radius: 4
+						radius: 4,
+						fx: markerFx
 					},
 					highlight: {
-						fillStyle: '#000',
-						radius: 5,
-						lineWidth: 2,
-						strokeStyle: '#fff'
+						scaling: 2
 						 
 					}
 					
@@ -1173,20 +1166,18 @@ function GetG1Panel(){
 		   , {
 					type: 'line',
 					axis: 'left',
-					title: 'S5',
+					title: 'График 5',
 					xField: 'P_DATE',
 					yField: 'S5',
 					style: {
 						lineWidth: 4
 					},
-					marker: {
-						radius: 4
+					  marker: {
+						type: 'square',
+						fx: markerFx
 					},
 					highlight: {
-						fillStyle: '#000',
-						radius: 5,
-						lineWidth: 2,
-						strokeStyle: '#fff'
+						scaling: 2
 						 
 					}
 					
@@ -1233,20 +1224,18 @@ function GetG1Panel(){
 			, {
 					type: 'line',
 					axis: 'left',
-					title: 'S6',
+					title: 'График 6',
 					xField: 'P_DATE',
 					yField: 'S6',
 					style: {
 						lineWidth: 4
 					},
-					marker: {
-						radius: 4
+					  marker: {
+						type: 'arrow',
+						fx: markerFx
 					},
 					highlight: {
-						fillStyle: '#000',
-						radius: 5,
-						lineWidth: 2,
-						strokeStyle: '#fff'
+						scaling: 2
 						 
 					}
 					
@@ -1293,20 +1282,18 @@ function GetG1Panel(){
 		   , {
 					type: 'line',
 					axis: 'left',
-					title: 'S7',
+					title: 'График 7',
 					xField: 'P_DATE',
 					yField: 'S7',
 					style: {
 						lineWidth: 4
 					},
-					marker: {
-						radius: 4
+				    marker: {
+						type: 'cross',
+						fx: markerFx
 					},
 					highlight: {
-						fillStyle: '#000',
-						radius: 5,
-						lineWidth: 2,
-						strokeStyle: '#fff'
+					scaling: 2
 						 
 					}
 					
@@ -1355,20 +1342,18 @@ function GetG1Panel(){
 		   , {
 					type: 'line',
 					axis: 'left',
-					title: 'S8',
+					title: 'График 8',
 					xField: 'P_DATE',
 					yField: 'S8',
 					style: {
 						lineWidth: 4
 					},
-					marker: {
-						radius: 4
+					 marker: {
+						type: 'triangle',
+						fx: markerFx
 					},
 					highlight: {
-						fillStyle: '#000',
-						radius: 5,
-						lineWidth: 2,
-						strokeStyle: '#fff'
+						scaling: 2
 						 
 					}
 					
@@ -1416,21 +1401,18 @@ function GetG1Panel(){
 			, {
 					type: 'line',
 					axis: 'left',
-					title: 'S9',
+					title: 'График 9',
 					xField: 'P_DATE',
 					yField: 'S9',
 					style: {
 						lineWidth: 4
 					},
 					marker: {
-						radius: 4
+						radius: 4,
+						fx: markerFx
 					},
 					highlight: {
-						fillStyle: '#000',
-						radius: 5,
-						lineWidth: 2,
-						strokeStyle: '#fff'
-						 
+						scaling: 2
 					}
 					
 					,
