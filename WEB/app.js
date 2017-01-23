@@ -43,6 +43,20 @@ idProperty:'DATAINDEX'
 });
 
 
+Ext.define('map_model', {
+    extend: 'Ext.data.Model',
+    fields: [
+	{ name: 'ID_BD', type: 'string' },
+	{ name: 'CHORT', type: 'string' },
+    { name: 'MAPX', type: 'number' },
+    { name: 'MAPY', type: 'number' },
+	{ name: 'COLOR', type: 'string' },
+	{ name: 'INFO', type: 'string' }
+	]
+	,
+    idProperty: 'ID_BD'
+});
+
 
 Ext.define('rep_model', {
     extend: 'Ext.data.Model',
@@ -83,6 +97,19 @@ Ext.define('status_model', {
     { name: 'ID_BD', type: 'number' }
 ],
     idProperty: 'ID_BD'
+});
+
+
+Ext.define('log_model', {
+    extend: 'Ext.data.Model',
+    fields: [
+	{ name: 'ID', type: 'string' },
+	{ name: 'УЗЕЛ', type: 'string' },
+	{ name: 'ВРЕМЯ', type: 'string' },
+    { name: 'ТИП', type: 'string' },
+    { name: 'ДЛИТЕЛЬНОСТЬ', type: 'string' },
+	{ name: 'ТЕКСТ', type: 'string' }
+]
 });
 
 
@@ -132,6 +159,14 @@ var enumGtype = Ext.create('Ext.data.ArrayStore', {
 
 
 
+if( typeof(Date.prototype.toLocaleFormat)=='undefined'){
+    Date.prototype.toLocaleFormat = function(format) {
+	    var f = {y : (this.getYear())%100 ,Y : this.getYear() + 1900,m : this.getMonth() + 1,d : this.getDate(),H : this.getHours(),M : this.getMinutes(),S : this.getSeconds()}
+	    for(var k in f)
+	        format = format.replace('%' + k, f[k] < 10 ? "0" + f[k] : f[k]);
+	    return format;
+	};
+}
 
 
 var last_tpl = "";
@@ -142,8 +177,11 @@ var last_pname = "не задан";
 var last_d = "";
 var last_dname = "узел не выбран";
 
-var last_f = "";
-var last_t = "";
+var date_f =Ext.Date.clearTime( Ext.Date.subtract(new Date(), Ext.Date.DAY, 5) ) ;
+var date_t =Ext.Date.clearTime( Ext.Date.add     (new Date(), Ext.Date.DAY, 1) );
+
+var last_f=myDateRenderer(  date_f );
+var	last_t=myDateRenderer(  date_t );
 
 var contentPanel;
 var menuPanel;
@@ -317,6 +355,33 @@ var store_tpl = Ext.create('Ext.data.Store', {
 });
 
 
+var store_map = Ext.create('Ext.data.Store', {
+	model: 'map_model',
+	autoLoad: false,
+	autoSync: false,
+	proxy: {
+		type: 'ajax',
+		url: 'mapinfo.aspx',
+		reader: {
+			type: 'json'
+		, root: 'data'
+		, successProperty: 'success'
+		, messageProperty: 'msg'
+		},
+		listeners: {
+			exception: function (proxy, response, operation) {
+			}
+			  
+			
+			
+		}
+	},
+	listeners: {
+	'load': function(){reloadMap();}
+	}
+
+});
+
 
 var store_dev = Ext.create('Ext.data.Store', {
 	model: 'dev_model',
@@ -462,7 +527,39 @@ var store_rep = Ext.create('Ext.data.Store', {
         }
         
     }
-   
+
+});
+
+
+
+var store_log = Ext.create('Ext.data.Store', {
+    model: 'log_model',
+    autoLoad: false,
+    autoSync: false,
+    proxy: {
+        type: 'ajax',
+        url: 'log.aspx',
+        reader: {
+            type: 'json'
+		    , root: 'data'
+		    , successProperty: 'success'
+		    , messageProperty: 'msg'
+        },
+        listeners: {
+
+            exception: function (proxy, response, operation) {
+                /*Ext.MessageBox.show({
+                title: 'REMOTE EXCEPTION',
+                msg: operation.getError(),
+                icon: Ext.MessageBox.ERROR,
+                buttons: Ext.Msg.OK
+                });
+                */
+            }
+        }
+
+    }
+
 });
 
 
@@ -546,14 +643,6 @@ var store_cols = Ext.create('Ext.data.Store', {
 });
 
  
-if( typeof(Date.prototype.toLocaleFormat)=='undefined'){
-    Date.prototype.toLocaleFormat = function(format) {
-	    var f = {y : (this.getYear())%100 ,Y : this.getYear() + 1900,m : this.getMonth() + 1,d : this.getDate(),H : this.getHours(),M : this.getMinutes(),S : this.getSeconds()}
-	    for(var k in f)
-	        format = format.replace('%' + k, f[k] < 10 ? "0" + f[k] : f[k]);
-	    return format;
-	};
-}
 
 function myDateRenderer(value, metaData, record, row, col, store, gridView) 
 { 
@@ -684,11 +773,254 @@ function reloadData(){
 
 function reloadRep(){
 	
-	store_rep.load({ params: { D: last_d, P: last_p,  F:last_f, T:last_t, TPL:last_tpl} });
+	store_rep.load({ params: { D: last_d, P: last_p,  F:last_f, T:last_t, TPL:last_tpl,U: userid} });
+}
+
+
+
+//  MAP support
+var map;
+var leafletView;
+var markers;
+var rIcon; 
+var gIcon ;
+var bIcon ;
+var yIcon ;
+var win='undefined';
+
+var monitorIntervalID=0;
+var monitorID=0;
+
+function Monitor(id){
+if(win=='undefined'){
+ win = Ext.create('widget.window', {
+                title: 'Монитор',
+                header: {
+                    titlePosition: 2,
+                    titleAlign: 'center'
+                },
+                closable: true,
+                closeAction: 'hide',
+				modal:true,
+                maximizable: false,
+                width: 500,
+                minWidth: 400,
+                height: 450,
+                layout: {
+                    type: 'absolute'
+                },
+                items: [ {
+                    xtype: 'panel',
+					id:'ajaxpanel',
+					x:5,
+					y:5,
+					height:440,
+					width:480,
+                    items: [{
+                        //title: 'Bogus Tab',
+                        html: 'Ожидаем ответа...'
+                    }]
+                }]
+            });
+	}
+	
+	win.show();
+	Ext.get('ajaxpanel').dom.innerHTML ='Подключение монитора...';
+	LoadMonitor(id);
+	monitorID=id;
+	monitorIntervalID = window.setInterval(LoadMonitortimer, 1000);
+}
+
+function LoadMonitortimer(){
+	LoadMonitor(monitorID);
+};
+function LoadMonitor(id){
+	Ext.Ajax.request({
+		url: 'monitor.aspx',
+		method:  'POST',
+		params: { 
+					MID: id
+				},
+		scripts:true,
+		success: function (response) {
+			Ext.get('ajaxpanel').dom.innerHTML = response.responseText;
+		}
+	});
+}
+
+function reloadMap(){
+	//console.log(
+	markers = [];
+	leafletView.RemoveMarkers();
+	store_map.each(
+		function (record, index) {
+			var COLOR = record.get('COLOR');
+			var MAPX = record.get('MAPX');
+			var MAPY = record.get('MAPY');
+			var f = record.get('COLFORMAT');
+			var sName = record.get('CSHORT');
+			var sPopup=sName +'<br/>' +record.get('INFO') + '<br/><a href="#" onclick="return Monitor(' +record.get("ID_BD") + ');">Монитор</a>';
+			if(MAPX!=0 && MAPY!=0){
+				switch (COLOR) {
+					case 'GREEN':
+						var marker = new PruneCluster.Marker(MAPY,MAPX,{ popup: sPopup, icon:gIcon},sName,0);
+						break;
+					case 'YELLOW':
+						var marker = new PruneCluster.Marker(MAPY,MAPX,{ popup: sPopup, icon:yIcon},sName,1);
+						break;
+					case 'RED':
+						var marker = new PruneCluster.Marker(MAPY,MAPX,{ popup: sPopup, icon:rIcon},sName,2);
+						break;
+					default:
+						var marker = new PruneCluster.Marker(MAPY,MAPX,{ popup: sPopup, icon:bIcon},sName,3);
+						break;
+				}
+				markers.push(marker);
+				leafletView.RegisterMarker(marker);
+			}
+		}
+	);
+	leafletView.ProcessView();
+};
+
+
+function loadMap(){
+	map = new L.Map('map', {center: new L.LatLng(60.000, 30.000), zoom: 10, zoomAnimation: false ,maxZoom:18});
+	var yndx = new L.Yandex();
+	map.addLayer(yndx);
+
+	leafletView = new PruneClusterForLeaflet();
+
+    leafletView.BuildLeafletClusterIcon = function(cluster) {
+        var e = new L.Icon.MarkerCluster();
+
+        e.stats = cluster.stats;
+        e.population = cluster.population;
+        return e;
+    };
+
+    var colors = ['#00AA00', '#dddd00','#EE0000'],
+        pi2 = Math.PI * 2;
+		
+		
+	rIcon = L.icon({
+    iconUrl: '../css/iconr.png',
+    iconSize: [20, 34],
+    iconAnchor: [10, 34],
+    popupAnchor: [0, -34],
+    shadowUrl: '',
+    shadowSize: [0, 0],
+    shadowAnchor: [10, 34]
+	});
+	
+	gIcon = L.icon({
+    iconUrl: '../css/icong.png',
+    iconSize: [20, 34],
+    iconAnchor: [10, 34],
+    popupAnchor: [0, -34],
+    shadowUrl: '',
+    shadowSize: [0, 0],
+    shadowAnchor: [10, 34]
+	});
+	
+	bIcon = L.icon({
+    iconUrl: '../css/iconb.png',
+    iconSize: [20, 34],
+    iconAnchor: [10, 34],
+    popupAnchor: [0, -34],
+    shadowUrl: '',
+    shadowSize: [0, 0],
+    shadowAnchor: [10, 34]
+	});
+	
+	yIcon = L.icon({
+    iconUrl: '../css/icony.png',
+    iconSize: [20, 34],
+    iconAnchor: [10, 34],
+    popupAnchor: [0, -34],
+    shadowUrl: '',
+    shadowSize: [0, 0],
+    shadowAnchor: [10, 34]
+	});
+
+
+    L.Icon.MarkerCluster = L.Icon.extend({
+        options: {
+            iconSize: new L.Point(44, 44),
+            className: 'prunecluster leaflet-markercluster-icon'
+        },
+
+        createIcon: function () {
+            // based on L.Icon.Canvas from shramov/leaflet-plugins (BSD licence)
+            var e = document.createElement('canvas');
+            this._setIconStyles(e, 'icon');
+            var s = this.options.iconSize;
+            e.width = s.x;
+            e.height = s.y;
+            this.draw(e.getContext('2d'), s.x, s.y);
+            return e;
+        },
+
+        createShadow: function () {
+            return null;
+        },
+
+        draw: function(canvas, width, height) {
+
+            var lol = 0;
+
+            var start = 0;
+            for (var i = 0, l = colors.length; i < l; ++i) {
+
+                var size = this.stats[i] / this.population;
+
+
+                if (size > 0) {
+                    canvas.beginPath();
+                    canvas.moveTo(22, 22);
+                    canvas.fillStyle = colors[i];
+                    var from = start + 0.14,
+                        to = start + size * pi2;
+
+                    if (to < from) {
+                        from = start;
+                    }
+                    canvas.arc(22,22,22, from, to);
+
+                    start = start + size*pi2;
+                    canvas.lineTo(22,22);
+                    canvas.fill();
+                    canvas.closePath();
+                }
+
+            }
+
+            canvas.beginPath();
+            canvas.fillStyle = 'white';
+            canvas.arc(22, 22, 18, 0, Math.PI*2);
+            canvas.fill();
+            canvas.closePath();
+
+            canvas.fillStyle = '#555';
+            canvas.textAlign = 'center';
+            canvas.textBaseline = 'middle';
+            canvas.font = 'bold 12px sans-serif';
+
+            canvas.fillText(this.population, 22, 22, 40);
+        }
+    });
+
+	 map.addLayer(leafletView);
+	 
+	 store_map.load();
 }
 
 function reloadStatus(){
 	store_status.load({ params: { U: userid} });
+}
+
+function reloadLog() {
+    store_log.load({ params: { U: userid,D: last_d} });
 }
 
 function reloadGraph(){
@@ -698,7 +1030,8 @@ function reloadGraph(){
 
 function reloadTpl(){
 	last_tpl="";
-	store_tpl.load({ params: { D: last_d, P: last_p} });
+	last_tplname="";
+	store_tpl.load({ params: { D: last_d, P: last_p,U: userid} });
 }
 
 
@@ -724,7 +1057,7 @@ function GetG1Filter(){
 					labelAlign:'top',
 					format:'d/m/Y',
 					submitFormat:'Y-m-d H:i:s',
-					value:  '',
+					value:  date_f,
 					name:  'dev_dfrom',
 					itemId: 'dev_dfrom',
 					fieldLabel: 'C',
@@ -756,7 +1089,7 @@ function GetG1Filter(){
 						labelAlign:'top',
 						format:'d/m/Y',
 						submitFormat:'Y-m-d H:i:s',
-						value:  '',
+						value:  date_t,
 						name:  'dev_dto',
 						itemId: 'dev_dto',
 						fieldLabel: 'По',
@@ -827,7 +1160,12 @@ function GetG1Filter(){
                                     gPanel.setTitle(last_dname + ". " + last_pname);
 									if(	last_d!="" && last_p!="" 	)
 											reloadGraph();
-                                }
+                                },
+								render : function(combo,eOpts) {
+									combo.setValue(combo.store.first().data.value);
+									last_p =combo.store.first().data.value;
+									last_pname =combo.store.first().data.name;
+								}
                             }
                         }
                     ]
@@ -1483,7 +1821,7 @@ function GetDataFilter(){
 						labelAlign:'top',
 						format:'d/m/Y',
 						submitFormat:'Y-m-d H:i:s',
-						value:  '',
+						value:  date_f,
 						name:  'dev_dfrom',
 						itemId: 'dev_dfrom',
 						fieldLabel: 'C',
@@ -1517,7 +1855,7 @@ function GetDataFilter(){
 						labelAlign:'top',
 						format:'d/m/Y',
 						submitFormat:'Y-m-d H:i:s',
-						value:  '',
+						value:  date_t,
 						name:  'dev_dto',
 						itemId: 'dev_dto',
 						fieldLabel: 'По',
@@ -1592,6 +1930,12 @@ function GetDataFilter(){
 									if(	last_d!="" && last_p!="" 	)
 											reloadData();
                                 }
+								,
+								render : function(combo,eOpts) {
+									combo.setValue(combo.store.first().data.value);
+									last_p =combo.store.first().data.value;
+									last_pname =combo.store.first().data.name;
+								}
                             }
                         }
                     ]
@@ -1619,7 +1963,7 @@ function GetRepFilter(){
 						labelAlign:'top',
 						format:'d/m/Y',
 						submitFormat:'Y-m-d H:i:s',
-						value:  '',
+						value:  date_f,
 						name:  'rep_dfrom',
 						itemId: 'rep_dfrom',
 						fieldLabel: 'C',
@@ -1655,7 +1999,7 @@ function GetRepFilter(){
 						labelAlign:'top',
 						format:'d/m/Y',
 						submitFormat:'Y-m-d H:i:s',
-						value:  '',
+						value:  date_t,
 						name:  'rep_dto',
 						itemId: 'rep_dto',
 						fieldLabel: 'По',
@@ -1704,6 +2048,7 @@ function GetRepFilter(){
                                 
 								if(	last_d!="" && last_p!="" 	){
 									reloadTpl();
+									combo.up('panel').down('#tpl_fld').setValue(null);
 									reloadRep();
 								}else{
 									last_tpl="";
@@ -1735,11 +2080,18 @@ function GetRepFilter(){
                     
 									if(	last_d!="" && last_p!="" 	){
 											reloadTpl();
+											combo.up('panel').down('#tpl_fld').setValue(null);
 											reloadRep();
 									}else{
 										last_tpl="";
 									}
                                 }
+								,
+								render : function(combo,eOpts) {
+									combo.setValue(combo.store.first().data.value);
+									last_p =combo.store.first().data.value;
+									last_pname =combo.store.first().data.name;
+								}
                             }
                         }
 						
@@ -1775,6 +2127,8 @@ function GetRepFilter(){
 							minHeight:60,
                             iconCls: 'icon-table_add',
                             text: 'Добавить шаблон',
+							hidden: (allowtemplate == 0),
+							disabled: (allowtemplate == 0),
                             itemId: 'bAddTpl',
                             handler: onAddTplClick
                         }
@@ -1786,6 +2140,64 @@ function GetRepFilter(){
 			
 }
 
+
+
+function GetRepPanel() {
+
+	dGrid=Ext.create('Ext.grid.Panel',	{ xtype: 'grid',
+					itemId: 'rep_grid',
+					autoScroll:true,
+					store: store_rep,
+
+					dockedItems: [{
+					    xtype: 'toolbar',
+					    items: [ {
+					        iconCls: 'icon-page_add',
+					        text: 'Создать отчет',
+					        itemId: 'bAddRep',
+					        scope: this,
+					        handler: onAddClick
+					    } ,
+						{
+					        iconCls: 'icon-page_refresh',
+					        text: 'Обновить',
+					        itemId: 'bRefresh',
+					        scope: this,
+					        handler: function(){
+								reloadRep();
+							}
+					    } 
+						]
+					}], 
+					columns: [
+							{ text: 'Дата создания', dataIndex: 'CREATEDATE', width: 140, minWidth: 150, sortable: true, renderer:myDateRenderer},
+							{ text: 'С', dataIndex: 'DFROM', width: 140, minWidth: 150, sortable: true , renderer:myDateRenderer},
+							{ text: 'По', dataIndex: 'DTO', width: 140, minWidth: 150, sortable: true , renderer:myDateRenderer},
+							{ text: 'Тип архива', dataIndex: 'CTYPE', width: 120, minWidth: 100, sortable: true,renderer:myTipRenderer  },
+                            { text: 'Узел', dataIndex: 'NODENAME', width: 120, minWidth: 100, sortable: true,renderer:myTipRenderer  },
+							{ text: 'Шаблон', dataIndex: 'FILENAME', width: 120, minWidth: 100, sortable: true, renderer: trefRenderer },
+                            { text: 'Готовность', dataIndex: 'REPORTREADY', width: 100, minWidth: 50, sortable: true ,renderer:OkRenderer},
+							{ text: 'Файл', dataIndex: 'REPORTREADY', width: 100, minWidth: 50, sortable: true ,renderer:refRenderer},
+                            { text: 'Ошибка', dataIndex: 'REPORTMSG',  minWidth: 100, sortable: true, flex:1,renderer:myTipRenderer  }
+						]
+				});
+
+		var p1 = Ext.create('Ext.panel.Panel', 
+		{
+				title: 'Отчеты',
+				layout: 'fit',
+				autoScroll:true,
+				items: [
+					dGrid
+				]
+			}
+		  
+		);
+	
+		intervalID = window.setInterval(reloadRep, 60000);
+
+    return p1;
+}
 
 
 function onAddTplClick() {
@@ -1928,6 +2340,8 @@ function GetDataPanel() {
 					        iconCls: 'icon-page_excel',
 					        text: 'Экспорт',
 					        itemId: 'bExport',
+							hidden: (allowreport == 0),
+							disabled: (allowreport == 0),
 					        scope: this,
 					        handler: onExportClick
 					    } ,
@@ -1936,7 +2350,7 @@ function GetDataPanel() {
 							text:   'Переопросить период',
 							itemId: 'requery',
 							hidden: (allowrequery == 0),
-							disabled: (allowrequery==0),
+							disabled: (allowrequery == 0),
 							scope:  this,
 							handler : onRequeryClick
 						}
@@ -1986,103 +2400,158 @@ function GetDataPanel() {
 
 function GetStatusPanel() {
 
-	sGrid=Ext.create('Ext.grid.Panel',	{ xtype: 'grid',
-					itemId: 'rep_grid',
-					autoScroll:true,
-					store: store_status,
+    sGrid = Ext.create('Ext.grid.Panel', { xtype: 'grid',
+        itemId: 'rep_grid',
+        autoScroll: true,
+        store: store_status,
 
-					dockedItems: [{
-					    xtype: 'toolbar',
-					    items:[
+        dockedItems: [{
+            xtype: 'toolbar',
+            items: [
 						    {
-					            iconCls: 'icon-page_refresh',
-					            text: 'Обновить',
-					            itemId: 'bRefresh',
-					            scope: this,
-					            handler: function(){
-								    reloadStatus();
-							    }
-					        } 
+						        iconCls: 'icon-page_refresh',
+						        text: 'Обновить',
+						        itemId: 'bRefresh',
+						        scope: this,
+						        handler: function () {
+						            reloadStatus();
+						        }
+						    }
 						]
-					}], 
-					columns: [
+        }],
+        columns: [
 
 
-    	                    { text: 'Группа', dataIndex: 'GROUP_NAME', width: 120, minWidth: 50, sortable: true, renderer:myColorRenderer},
-							{ text: 'Узел', dataIndex: 'NODE', width: 200, minWidth: 50, sortable: true, renderer:myColorRenderer},
-							{ text: 'Отст. текущих', dataIndex: 'CURTIME', width: 140, minWidth: 30, sortable: true , renderer:myColorRenderer},
-                            { text: 'Отст. часовых', dataIndex: 'HOURTIME', width: 140, minWidth: 30, sortable: true , renderer:myColorRenderer},
-                            { text: 'Отст. суточных', dataIndex: 'DAYTIME', width: 140, minWidth: 30, sortable: true , renderer:myColorRenderer},
-                            { text: 'Отст. итоговых', dataIndex: 'TOTALTIME', width: 140, minWidth: 30, sortable: true , renderer:myColorRenderer},
-                            { text: 'Недост. часовых', dataIndex: 'HMISSING', width: 140, minWidth: 30, sortable: true , renderer:myColorRenderer},
-                            { text: 'Недост. суточных', dataIndex: 'DMISSING', width: 140, minWidth: 30, sortable: true , renderer:myColorRenderer},
-                            { text: 'Статус', dataIndex: 'INFO',  minWidth: 50, flex:1, sortable: true , renderer:myColorRenderer}
+    	                    { text: 'Группа', dataIndex: 'GROUP_NAME', width: 120, minWidth: 50, sortable: true, renderer: myColorRenderer },
+							{ text: 'Узел', dataIndex: 'NODE', width: 200, minWidth: 50, sortable: true, renderer: myColorRenderer },
+							{ text: 'Отст. текущих', dataIndex: 'CURTIME', width: 140, minWidth: 30, sortable: true, renderer: myColorRenderer },
+                            { text: 'Отст. часовых', dataIndex: 'HOURTIME', width: 140, minWidth: 30, sortable: true, renderer: myColorRenderer },
+                            { text: 'Отст. суточных', dataIndex: 'DAYTIME', width: 140, minWidth: 30, sortable: true, renderer: myColorRenderer },
+                            { text: 'Отст. итоговых', dataIndex: 'TOTALTIME', width: 140, minWidth: 30, sortable: true, renderer: myColorRenderer },
+                            { text: 'Недост. часовых', dataIndex: 'HMISSING', width: 140, minWidth: 30, sortable: true, renderer: myColorRenderer },
+                            { text: 'Недост. суточных', dataIndex: 'DMISSING', width: 140, minWidth: 30, sortable: true, renderer: myColorRenderer },
+                            { text: 'Статус', dataIndex: 'INFO', minWidth: 50, flex: 1, sortable: true, renderer: myColorRenderer }
 
 						]
-				});
+    });
 
-			var p1 = Ext.create('Ext.panel.Panel', 
+    var p1 = Ext.create('Ext.panel.Panel',
 				{
-					title: 'Статус',
-					layout: 'fit',
-					autoScroll:true,
-					items: [
+				    title: 'Статус',
+				    layout: 'fit',
+				    autoScroll: true,
+				    items: [
 						sGrid
 					]
 				}
-			  
+
 			);
-	
-		intervalID = window.setInterval(reloadStatus, 60000);
+
+    intervalID = window.setInterval(reloadStatus, 60000);
 
     return p1;
 }
 
 
 
-function GetRepPanel() {
+function GetMapPanel() {
+    var p1 = Ext.create('Ext.panel.Panel',
+				{
+				    //title: 'Карта',
+					id:'map',
+				    layout: 'fit',
+				    autoScroll: true,
+				    items: [
+						
+					]
+				}
+
+			);
+    intervalID = window.setInterval(reloadMap, 60000);
+
+    return p1;
+}
+
+
+function GetLogFilter(){
+		var p1 = Ext.create('Ext.panel.Panel', {
+		    layout: {
+		        type: 'table',
+				columns:2
+		    },
+		    autoScroll: true,
+			items: [
+			
+                    {
+                        xtype: 'combobox',
+					
+					
+						minWidth:'350',
+                        store: store_dev,
+                        itemId: 'dev_id',
+                        displayField: 'NAME',
+                        valueField: 'ID_BD',
+                        fieldLabel: 'Узел',
+						emptyText:'Узел',
+						labelAlign:'top',
+                        editable: false,
+                        queryMode: 'local',
+	
+                        listeners: {
+                            select: function (combo, records, eOpts) {
+                                last_d = records[0].get('ID_BD');
+                                last_dname=records[0].get("NAME") + ", " + records[0].get("CDEVDESC") ;
+                                dGrid.setTitle(last_dname + ". " + last_pname);
+								reloadLog();
+								
+                            }
+                        }
+                    }
+						
+				
+
+                    ]
+		}
+	);
+	return p1;
+			
+}
+
+function GetLogPanel() {
 
 	dGrid=Ext.create('Ext.grid.Panel',	{ xtype: 'grid',
-					itemId: 'rep_grid',
+					itemId: 'log_grid',
 					autoScroll:true,
-					store: store_rep,
+					store: store_log,
 
 					dockedItems: [{
 					    xtype: 'toolbar',
-					    items: [ {
-					        iconCls: 'icon-page_add',
-					        text: 'Создать отчет',
-					        itemId: 'bAddRep',
-					        scope: this,
-					        handler: onAddClick
-					    } ,
+					    items: [
 						{
 					        iconCls: 'icon-page_refresh',
 					        text: 'Обновить',
 					        itemId: 'bRefresh',
 					        scope: this,
 					        handler: function(){
-								reloadRep();
+								reloadLog();
 							}
 					    } 
 						]
 					}], 
 					columns: [
-							{ text: 'Дата создания', dataIndex: 'CREATEDATE', width: 140, minWidth: 150, sortable: true, renderer:myDateRenderer},
-							{ text: 'С', dataIndex: 'DFROM', width: 140, minWidth: 150, sortable: true , renderer:myDateRenderer},
-							{ text: 'По', dataIndex: 'DTO', width: 140, minWidth: 150, sortable: true , renderer:myDateRenderer},
-							{ text: 'Тип архива', dataIndex: 'CTYPE', width: 120, minWidth: 100, sortable: true,renderer:myTipRenderer  },
-                            { text: 'Узел', dataIndex: 'NODENAME', width: 120, minWidth: 100, sortable: true,renderer:myTipRenderer  },
-							{ text: 'Шаблон', dataIndex: 'FILENAME', width: 120, minWidth: 100, sortable: true, renderer: trefRenderer },
-                            { text: 'Готовность', dataIndex: 'REPORTREADY', width: 100, minWidth: 50, sortable: true ,renderer:OkRenderer},
-							{ text: 'Файл', dataIndex: 'REPORTREADY', width: 100, minWidth: 50, sortable: true ,renderer:refRenderer},
-                            { text: 'Ошибка', dataIndex: 'REPORTMSG',  minWidth: 100, sortable: true, flex:1,renderer:myTipRenderer  }
+							{ text: 'ID', dataIndex: 'ID', width: 100, minWidth: 50, sortable: true },
+							{ text: 'УЗЕЛ', dataIndex: 'УЗЕЛ', width: 200, minWidth: 150, sortable: true, renderer: myTipRenderer },
+							{ text: 'ВРЕМЯ', dataIndex: 'ВРЕМЯ', width: 150, minWidth: 150, sortable: true },
+							{ text: 'ТИП', dataIndex: 'ТИП', width: 150, minWidth: 100, sortable: true, renderer: myTipRenderer },
+                            { text: 'ДЛИТЕЛЬНОСТЬ', dataIndex: 'ДЛИТЕЛЬНОСТЬ', width: 120, minWidth: 100, sortable: true },
+							{ text: 'ТЕКСТ', dataIndex: 'ТЕКСТ', minWidth: 100, sortable: true, flex: 1, renderer: myTipRenderer }
+                           
 						]
 				});
 
 		var p1 = Ext.create('Ext.panel.Panel', 
 		{
-				title: 'Отчеты',
+				title: 'ЛОГ',
 				layout: 'fit',
 				autoScroll:true,
 				items: [
@@ -2092,143 +2561,14 @@ function GetRepPanel() {
 		  
 		);
 	
-		intervalID = window.setInterval(reloadRep, 60000);
+		intervalID = window.setInterval(reloadLog, 60000);
 
     return p1;
 }
 
 
 menuPanel = Ext.create('Ext.panel.Panel', 
-		{ region:'north', layout:'hbox', height:60 ,
-			items:[
-
-            		{
-						toggleGroup:'menu',
-						xtype: 'button',
-						scale: 'small',
-						text: 'Статус',
-		 				iconCls: 'icon-chart_bar',
-						itemId: 'cmd_status',
-						border: 1,
-						minWidth: 200,
-						style: {
-							borderColor: 'cyan',
-							borderStyle: 'solid'
-						},
-						handler: function () {
-							contentPanel.removeAll();
-							if(intervalID!=0){
-								window.clearInterval(intervalID);
-								intervalID=0;
-							}
-							contentPanel.add(GetStatusPanel());
-							filterPanel.removeAll();
-							filterPanel.setVisible(false);
-							store_status.load({ params: { U: userid} });
-							
-						}
-
-
-					},
-					{
-						toggleGroup:'menu',
-						xtype: 'button',
-						scale: 'small',
-						text: 'Архив',
-		 				iconCls: 'icon-page_white_zip',
-						itemId: 'cmd_arch',
-						border: 1,
-						minWidth: 200,
-						style: {
-							borderColor: 'cyan',
-							borderStyle: 'solid'
-						},
-						handler: function () {
-							contentPanel.removeAll();
-							if(intervalID!=0){
-								window.clearInterval(intervalID);
-								intervalID=0;
-							}
-							contentPanel.add(GetDataPanel());
-							filterPanel.removeAll();
-							filterPanel.add(GetDataFilter());
-							filterPanel.setVisible(true);
-							filterPanel.expand();
-							filterPanel.setTitle('Фильтр');
-							store_dev.load({ params: { U: userid} });
-							
-						}
-
-
-					},
-					{	
-						toggleGroup:'menu',
-						xtype: 'button',
-						scale: 'small',
-						text: 'Отчет',
-						iconCls: 'icon-script',
-						itemId: 'cmd_rep',
-						border: 1,
-						minWidth: 200,
-						//flex:1,
-						style: {
-							borderColor: 'cyan',
-							borderStyle: 'solid'
-						},
-						handler: function () {
-						    contentPanel.removeAll();
-							if(intervalID!=0){
-								window.clearInterval(intervalID);
-								intervalID=0;
-							}
-							contentPanel.add(GetRepPanel());
-							filterPanel.removeAll();
-							filterPanel.add(GetRepFilter());
-							filterPanel.setVisible(true);
-							filterPanel.expand();
-							filterPanel.setTitle('Фильтр');
-							store_dev.load({ params: { U: userid} });
-							
-
-						}
-					}
-					,										
-					{	
-						toggleGroup:'menu',
-						xtype: 'button',
-						scale: 'small',
-						text: 'Графики',
-						iconCls: 'icon-chart_line',
-						itemId: 'cmd_g1',
-						border: 1,
-						minWidth: 200,
-						//flex:1,
-						style: {
-							borderColor: 'cyan',
-							borderStyle: 'solid'
-						},
-						handler: function () {
-							contentPanel.removeAll();
-							if(intervalID!=0){
-								window.clearInterval(intervalID);
-								intervalID=0;
-							}
-							contentPanel.add(GetG1Panel());
-							filterPanel.removeAll();
-							filterPanel.add(GetG1Filter());
-							filterPanel.setVisible(true);
-							filterPanel.expand();
-							filterPanel.setTitle('Фильтр');
-							store_dev.load({ params: { U: userid} });
-							
-
-						}
-					}
-
-
-					
-				]
-			} 
+		{ region:'north', layout:'hbox', height:60 }
 		);
 
 contentPanel=Ext.create('Ext.panel.Panel', { region:'center', layout:'fit' } );
@@ -2248,6 +2588,231 @@ function OnLogin(){
 		window.clearInterval(intervalID);
 		intervalID = 0;
 	}
+	if(monitorIntervalID!=0){
+		window.clearInterval(monitorIntervalID);
+		monitorIntervalID=0;
+	}
+	menuPanel.removeAll();
+	menuPanel.add(
+            		{
+						toggleGroup:'menu',
+						xtype: 'button',
+						scale: 'small',
+						text: 'Статус',
+		 				iconCls: 'icon-chart_bar',
+						itemId: 'cmd_status',
+						border: 1,
+						minWidth: 200,
+						style: {
+							borderColor: 'cyan',
+							borderStyle: 'solid'
+						},
+						handler: function () {
+							contentPanel.removeAll();
+							if(intervalID!=0){
+								window.clearInterval(intervalID);
+								intervalID=0;
+							}
+							if(monitorIntervalID!=0){
+								window.clearInterval(monitorIntervalID);
+								monitorIntervalID=0;
+							}
+							
+							contentPanel.add(GetStatusPanel());
+							filterPanel.removeAll();
+							filterPanel.setVisible(false);
+							store_status.load({ params: { U: userid} });
+							
+						}
+
+
+					});
+					
+					
+		menuPanel.add(
+            		{
+						toggleGroup:'menu',
+						xtype: 'button',
+						scale: 'small',
+						text: 'Карта',
+		 				iconCls: 'icon-map',
+						itemId: 'cmd_map',
+						border: 1,
+						minWidth: 200,
+						style: {
+							borderColor: 'cyan',
+							borderStyle: 'solid'
+						},
+						handler: function () {
+							contentPanel.removeAll();
+							if(intervalID!=0){
+								window.clearInterval(intervalID);
+								intervalID=0;
+							}
+							if(monitorIntervalID!=0){
+								window.clearInterval(monitorIntervalID);
+								monitorIntervalID=0;
+							}
+							contentPanel.add(GetMapPanel());
+							filterPanel.removeAll();
+							filterPanel.setVisible(false);
+							loadMap();
+							
+						}
+
+
+					});
+					
+	menuPanel.add({
+						toggleGroup:'menu',
+						xtype: 'button',
+						scale: 'small',
+						text: 'Архив',
+		 				iconCls: 'icon-page_white_zip',
+						itemId: 'cmd_arch',
+						border: 1,
+						minWidth: 200,
+						style: {
+							borderColor: 'cyan',
+							borderStyle: 'solid'
+						},
+						handler: function () {
+							contentPanel.removeAll();
+							if(intervalID!=0){
+								window.clearInterval(intervalID);
+								intervalID=0;
+							}
+							if(monitorIntervalID!=0){
+								window.clearInterval(monitorIntervalID);
+								monitorIntervalID=0;
+							}
+							contentPanel.add(GetDataPanel());
+							filterPanel.removeAll();
+							filterPanel.add(GetDataFilter());
+							filterPanel.setVisible(true);
+							filterPanel.expand();
+							filterPanel.setTitle('Фильтр');
+							store_dev.load({ params: { U: userid} });
+							
+						}
+
+
+					});
+		if(allowreport==1){
+			menuPanel.add({	
+						toggleGroup:'menu',
+						xtype: 'button',
+						scale: 'small',
+						text: 'Отчет',
+						iconCls: 'icon-script',
+						itemId: 'cmd_rep',
+						border: 1,
+						minWidth: 200,
+						style: {
+							borderColor: 'cyan',
+							borderStyle: 'solid'
+						},
+						handler: function () {
+						    contentPanel.removeAll();
+							if(intervalID!=0){
+								window.clearInterval(intervalID);
+								intervalID=0;
+							}
+							if(monitorIntervalID!=0){
+								window.clearInterval(monitorIntervalID);
+								monitorIntervalID=0;
+							}
+							contentPanel.add(GetRepPanel());
+							filterPanel.removeAll();
+							filterPanel.add(GetRepFilter());
+							filterPanel.setVisible(true);
+							filterPanel.expand();
+							filterPanel.setTitle('Фильтр');
+							store_dev.load({ params: { U: userid} });
+							}
+					}
+					);
+		}
+														
+		menuPanel.add({	
+						toggleGroup:'menu',
+						xtype: 'button',
+						scale: 'small',
+						text: 'Графики',
+						iconCls: 'icon-chart_line',
+						itemId: 'cmd_g1',
+						border: 1,
+						minWidth: 200,
+						//flex:1,
+						style: {
+							borderColor: 'cyan',
+							borderStyle: 'solid'
+						},
+						handler: function () {
+							contentPanel.removeAll();
+							if(intervalID!=0){
+								window.clearInterval(intervalID);
+								intervalID=0;
+							}
+							if(monitorIntervalID!=0){
+								window.clearInterval(monitorIntervalID);
+								monitorIntervalID=0;
+							}
+							contentPanel.add(GetG1Panel());
+							filterPanel.removeAll();
+							filterPanel.add(GetG1Filter());
+							filterPanel.setVisible(true);
+							filterPanel.expand();
+							filterPanel.setTitle('Фильтр');
+							store_dev.load({ params: { U: userid} });
+							
+
+						}
+					}
+					);
+
+menuPanel.add(
+            		{
+            		    toggleGroup: 'menu',
+            		    xtype: 'button',
+            		    scale: 'small',
+            		    text: 'Лог',
+            		    iconCls: 'icon-script_code_red',
+            		    itemId: 'cmd_log',
+            		    border: 1,
+            		    minWidth: 200,
+            		    style: {
+            		        borderColor: 'cyan',
+            		        borderStyle: 'solid'
+            		    },
+            		    handler: function () {
+            		        contentPanel.removeAll();
+            		        if (intervalID != 0) {
+            		            window.clearInterval(intervalID);
+            		            intervalID = 0;
+            		        }
+							if(monitorIntervalID!=0){
+								window.clearInterval(monitorIntervalID);
+								monitorIntervalID=0;
+							}
+            		        contentPanel.add(GetLogPanel());
+            		        filterPanel.removeAll();
+							filterPanel.add(GetLogFilter()) ;
+							filterPanel.setVisible(true);
+							filterPanel.expand();
+							filterPanel.setTitle('Фильтр');
+							last_d="";
+							store_dev.load({ params: { U: userid} });
+            		        store_log.load({ params: { U: userid, D:"" } });
+
+            		    }
+
+
+            		});
+
+	
+	
+	
 	menuPanel.setVisible(true);
 	filterPanel.removeAll();
 	filterPanel.setVisible(false);
